@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1f45">
+  <title>Reel It Operations</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <section id="auth-view" class="auth-shell">
+    <div class="auth-card">
+      <div class="brand-mark">RI</div>
+      <p class="eyebrow">PRIVATE OPERATIONS</p>
+      <h1>Reel It Owner Desk</h1>
+      <p class="muted">Approve new Reelos, answer support requests, and manage launch operations securely.</p>
+      <form id="login-form">
+        <label>Admin email<input id="email" type="email" autocomplete="email" required></label>
+        <label>Password<input id="password" type="password" autocomplete="current-password" required></label>
+        <button class="primary wide" type="submit">Sign in securely</button>
+      </form>
+      <div class="auth-links">
+        <button id="forgot-password" class="link-button">Forgot password?</button>
+        <button id="create-account" class="link-button">Create account</button>
+      </div>
+      <p id="auth-message" class="message" aria-live="polite"></p>
+      <p class="fine-print">Access is restricted to active Reel It administrators. Creating an account does not automatically grant owner access.</p>
+    </div>
+  </section>
+
+  <section id="app-view" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="brand-row"><div class="brand-mark small">RI</div><div><strong>Reel It</strong><span>Owner Desk</span></div></div>
+      <nav id="nav"></nav>
+      <button id="sign-out" class="sign-out">Sign out</button>
+    </aside>
+    <main>
+      <header class="topbar">
+        <div><p class="eyebrow">REEL IT OPERATIONS</p><h2 id="page-title">Profiles</h2></div>
+        <div class="admin-pill"><span class="live-dot"></span><span id="admin-email"></span></div>
+      </header>
+      <div class="metrics" id="metrics"></div>
+      <section id="content" class="content"><div class="loading">Loading operations…</div></section>
+    </main>
+  </section>
+
+  <dialog id="modal"><div id="modal-content"></div><button id="close-modal" class="icon-close" aria-label="Close">×</button></dialog>
+  <div id="toast" role="status"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
