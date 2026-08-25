@@ -1,0 +1,80 @@
+.global-search {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  max-width: 520px;
+  margin: 0 24px;
+}
+.global-search input { background: #fff; padding: 11px 13px; }
+.global-search button { white-space: nowrap; }
+.control-alert {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  border-radius: 15px;
+  padding: 13px 15px;
+  margin-bottom: 20px;
+  background: #eafaf5;
+  color: #147451;
+}
+.control-alert.critical { background: #fff0f1; color: #b92134; }
+.control-alert.urgent { background: #fff6e7; color: #9a5b00; }
+.control-alert.review { background: #eef4ff; color: #2457a8; }
+.control-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+  margin: 10px 0 24px;
+}
+.control-columns h4, .modal-body > h4 { margin: 18px 0 10px; }
+.timeline { border-left: 2px solid var(--line); margin-left: 8px; padding-left: 20px; }
+.timeline > div { position: relative; display: grid; gap: 3px; padding: 0 0 18px; }
+.timeline span {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--blue);
+  left: -26px;
+  top: 4px;
+  box-shadow: 0 0 0 5px #1769ff16;
+}
+.timeline small { color: var(--muted); }
+.notes {
+  background: #f8fbff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 4px 14px;
+  margin-bottom: 10px;
+  max-height: 190px;
+  overflow: auto;
+}
+.notes p { padding: 9px 0; margin: 0; border-bottom: 1px solid var(--line); font-size: 13px; line-height: 1.5; }
+.notes p:last-child { border-bottom: 0; }
+.support-context {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  background: var(--navy);
+  color: #fff;
+  padding: 14px;
+  border-radius: 16px;
+  margin-bottom: 16px;
+}
+.support-context div { display: grid; gap: 4px; }
+.support-context span { font-size: 10px; letter-spacing: .1em; color: #9fb5db; font-weight: 900; }
+.support-context strong { font-size: 13px; }
+.support-context small { color: #c5d2e9; }
+.support-context button { align-self: center; }
+.modal-body .loading { padding: 30px 15px; }
+@media (max-width: 1100px) {
+  .topbar { flex-wrap: wrap; padding: 20px 0; }
+  .global-search { order: 3; flex-basis: 100%; max-width: none; margin: 12px 0 0; }
+  .control-columns { grid-template-columns: 1fr; }
+}
+@media (max-width: 620px) {
+  .support-context { grid-template-columns: 1fr; }
+  .global-search { display: grid; grid-template-columns: 1fr auto; }
+  .control-alert { align-items: flex-start; flex-direction: column; }
+}

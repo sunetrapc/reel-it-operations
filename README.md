@@ -1,8 +1,9 @@
 # Reel It Operations Dashboard
 
-An editable GitHub Pages version of the private Reel It Owner Desk. It connects directly to the existing Firebase project and preserves the app dashboard's nine operational queues:
+An owner-only GitHub Pages control room for Reel It. It connects to the existing Firebase project and turns app events into live operational decisions.
 
-- Reelo profile approvals
+- Operations Inbox and live booking control room
+- Reelo application approvals
 - SOS alerts
 - Human support conversations
 - Resolved-support feedback
@@ -25,11 +26,15 @@ active: true
 
 Never place service-account JSON, Razorpay secrets, private keys, passwords, or Admin SDK credentials in this repository. The Firebase web configuration already included here is a public project identifier, not an administrator credential.
 
+## Access policy
+
+There is no public account-creation option. Owner accounts must be created deliberately in Firebase Authentication and activated through `admins/{uid}` with `active: true`.
+
 ## Before publishing
 
 1. In Firebase Console, open **Authentication → Settings → Authorized domains**.
 2. Add your GitHub Pages domain, such as `yourname.github.io`.
-3. Keep `operations.thereelit.com` authorized if you use the included `CNAME`.
+3. Authorize only the GitHub Pages hostname you use.
 4. Open **App Check → Apps → Web app** and configure a reCAPTCHA v3 provider.
 5. Put the public reCAPTCHA site key in `firebase-config.js` as `recaptchaSiteKey`.
 6. Deploy the latest Reel It Cloud Functions and Firestore rules from the Android launch candidate. Callable owner actions enforce App Check.
@@ -43,24 +48,13 @@ Never place service-account JSON, Razorpay secrets, private keys, passwords, or 
 5. Under **Build and deployment**, select **GitHub Actions**.
 6. The included workflow publishes the site automatically.
 
-### Move `operations.thereelit.com` from the old host
-
-The domain currently points to the previous ChatGPT-hosted dashboard. After GitHub Pages shows its assigned address, change the DNS record for `operations`:
-
-```text
-Type: CNAME
-Name: operations
-Value: YOUR-GITHUB-USERNAME.github.io
-```
-
-Remove the old `custom-domains.chatgpt.site` value. Keep only one CNAME for `operations`, then confirm the custom domain under **GitHub → Repository → Settings → Pages**. DNS and HTTPS activation can take time.
-
-If you do not want the custom domain yet, delete the `CNAME` file before uploading. GitHub will then use its standard `github.io` address.
+This release intentionally has no custom domain. Use the normal `YOUR-USERNAME.github.io/reel-it-operations/` address. Remove any custom domain from GitHub Pages settings and remove the obsolete `operations` DNS record.
 
 ## Edit the dashboard
 
 - `index.html`: page structure and login screen
 - `styles.css`: colors, spacing, cards, mobile layout
+- `control-room.css`: live-search, booking timeline, support context, and responsive control-room layouts
 - `app.js`: Firebase authentication, queries, queues, and owner actions
 - `firebase-config.js`: Firebase web app and App Check configuration
 - `.github/workflows/deploy-pages.yml`: automatic deployment
@@ -79,4 +73,4 @@ Then open `http://localhost:8080` and add `localhost` to Firebase Authorized dom
 
 ## Admin account setup
 
-The dashboard's **Create account** link creates a Firebase Authentication account only. For safety, it does not make that person an administrator. In Firestore, manually create an `admins/{uid}` document with `active: true`. Sign out and sign back in afterward.
+Create owner accounts only in Firebase Authentication. In Firestore, manually create an `admins/{uid}` document with `active: true`. No visitor can create an account from this dashboard.

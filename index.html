@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="control-room.css">
 </head>
 <body>
   <section id="auth-view" class="auth-shell">
@@ -24,7 +25,6 @@
       </form>
       <div class="auth-links">
         <button id="forgot-password" class="link-button">Forgot password?</button>
-        <button id="create-account" class="link-button">Create account</button>
       </div>
       <p id="auth-message" class="message" aria-live="polite"></p>
       <p class="fine-print">Access is restricted to active Reel It administrators. Creating an account does not automatically grant owner access.</p>
@@ -40,6 +40,7 @@
     <main>
       <header class="topbar">
         <div><p class="eyebrow">REEL IT OPERATIONS</p><h2 id="page-title">Profiles</h2></div>
+        <div class="global-search"><input id="global-search" placeholder="Booking ID, email, payment ID…"><button id="search-button" class="primary">Search</button></div>
         <div class="admin-pill"><span class="live-dot"></span><span id="admin-email"></span></div>
       </header>
       <div class="metrics" id="metrics"></div>
