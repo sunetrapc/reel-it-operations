@@ -3,52 +3,60 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0b1f45">
+  <meta name="theme-color" content="#ffffff">
   <title>Reel It Operations</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="control-room.css">
 </head>
 <body>
   <section id="auth-view" class="auth-shell">
     <div class="auth-card">
-      <div class="brand-mark">RI</div>
-      <p class="eyebrow">PRIVATE OPERATIONS</p>
-      <h1>Reel It Owner Desk</h1>
-      <p class="muted">Approve new Reelos, answer support requests, and manage launch operations securely.</p>
+      <div class="brand-lockup"><div class="brand-mark">RI</div><div><strong>Reel It</strong><span>Operations</span></div></div>
+      <p class="eyebrow">PRIVATE OWNER ACCESS</p>
+      <h1>Operations Control Room</h1>
+      <p class="muted">Bookings, support, Reelos, delivery, payments and safety in one place.</p>
       <form id="login-form">
         <label>Admin email<input id="email" type="email" autocomplete="email" required></label>
         <label>Password<input id="password" type="password" autocomplete="current-password" required></label>
-        <button class="primary wide" type="submit">Sign in securely</button>
+        <button class="btn primary wide" type="submit">Sign in</button>
       </form>
-      <div class="auth-links">
-        <button id="forgot-password" class="link-button">Forgot password?</button>
-      </div>
+      <button id="forgot-password" class="text-btn">Forgot password?</button>
       <p id="auth-message" class="message" aria-live="polite"></p>
-      <p class="fine-print">Access is restricted to active Reel It administrators. Creating an account does not automatically grant owner access.</p>
     </div>
   </section>
 
-  <section id="app-view" class="app-shell hidden">
+  <section id="app-view" class="app hidden">
     <aside class="sidebar">
-      <div class="brand-row"><div class="brand-mark small">RI</div><div><strong>Reel It</strong><span>Owner Desk</span></div></div>
+      <div class="brand-lockup side"><div class="brand-mark">RI</div><div><strong>Reel It</strong><span>OPERATIONS</span></div></div>
+      <div class="owner-card"><div class="owner-avatar">RI</div><div><strong>Owner Desk</strong><span><i></i> Online</span></div></div>
       <nav id="nav"></nav>
-      <button id="sign-out" class="sign-out">Sign out</button>
+      <div class="sidebar-bottom"><div class="signed-in"><strong id="admin-name">Reel It Owner</strong><span id="admin-email"></span></div><button id="sign-out" class="text-btn">Sign out</button></div>
     </aside>
-    <main>
+
+    <main class="workspace">
       <header class="topbar">
-        <div><p class="eyebrow">REEL IT OPERATIONS</p><h2 id="page-title">Profiles</h2></div>
-        <div class="global-search"><input id="global-search" placeholder="Booking ID, email, payment ID…"><button id="search-button" class="primary">Search</button></div>
-        <div class="admin-pill"><span class="live-dot"></span><span id="admin-email"></span></div>
+        <div><h1 id="page-title">Overview</h1><p id="page-subtitle">Real-time overview of Reel It operations</p></div>
+        <div class="top-actions">
+          <div class="top-actions-row">
+            <div class="date-chip" id="today-chip">Today</div>
+            <button class="btn secondary filter-button" type="button">⌁ Filters⌄</button>
+            <button id="refresh-all" class="btn secondary">Refresh</button>
+          </div>
+          <div class="global-search"><span>⌕</span><input id="global-search" placeholder="Search booking ID, customer, Reelo, email, payment ID…"><button id="search-button" class="btn primary">Search</button></div>
+        </div>
       </header>
-      <div class="metrics" id="metrics"></div>
-      <section id="content" class="content"><div class="loading">Loading operations…</div></section>
+      <section id="content" class="page-content"><div class="loading">Loading Reel It Operations…</div></section>
     </main>
+
+    <aside id="drawer" class="drawer" aria-hidden="true">
+      <div class="drawer-head"><div><span class="eyebrow">CONTROL ROOM</span><h2 id="drawer-title">Booking</h2></div><button id="close-drawer" class="icon-btn" aria-label="Close">×</button></div>
+      <div id="drawer-body" class="drawer-body"></div>
+    </aside>
   </section>
 
-  <dialog id="modal"><div id="modal-content"></div><button id="close-modal" class="icon-close" aria-label="Close">×</button></dialog>
+  <dialog id="modal"><div id="modal-content"></div><button id="close-modal" class="icon-btn modal-close">×</button></dialog>
   <div id="toast" role="status"></div>
   <script type="module" src="app.js"></script>
 </body>
