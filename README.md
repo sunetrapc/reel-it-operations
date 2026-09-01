@@ -49,3 +49,7 @@ Commit and push. GitHub Pages will serve the new dashboard from the existing URL
 ## Important
 
 Do not put Razorpay secrets, Firebase service-account files, passwords, or private keys in this repository. Firebase web configuration and reCAPTCHA site keys are public client configuration; backend secrets remain in Cloud Secret Manager.
+
+## V4 practical patch
+
+`V4_PRACTICAL_OPERATIONS_PATCH_NOTES.md` documents the controlled V4 upgrade. The patch keeps the existing live support-chat architecture rather than replacing it.
