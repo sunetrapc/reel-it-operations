@@ -100,7 +100,7 @@ function applyOpsFilters(rows){const now=new Date();return rows.filter(x=>{if(op
 
 async function fetchBookings(){const snap=await getDocs(query(collection(db,"bookings"),orderBy("updatedAt","desc"),limit(250)));bookingCache=snap.docs.map(d=>({id:d.id,...d.data()}));return bookingCache;}
 async function loadOverview(){
-  const [bookings,supportSnap,profilesSnap,sosSnap]=await Promise.all([fetchBookings(),getDocs(query(collection(db,"support_threads"),where("humanRequested","==",true))),getDocs(collection(db,"reelo_profiles")),getDocs(query(collection(db,"sos_alerts"),where("status","in",["active","acknowledged","escalated"]))) ]);
+  const [bookings,supportSnap,profilesSnap,sosSnap]=await Promise.all([fetchBookings(),getDocs(collection(db,"support_threads")),getDocs(collection(db,"reelo_profiles")),getDocs(query(collection(db,"sos_alerts"),where("status","in",["active","acknowledged","escalated"]))) ]);
   const today=new Date();today.setHours(0,0,0,0);
   const filtered=applyOpsFilters(bookings);
   const todayBookings=bookings.filter(x=>toDate(x.createdAt)?.getTime()>=today.getTime());
@@ -109,7 +109,7 @@ async function loadOverview(){
   const pending=bookings.filter(x=>deliveryState(x).key==="pending_upload").length;
   const overdue=bookings.filter(x=>deliveryState(x).detail.includes("overdue")).length;
   const attentionRows=bookings.filter(needsAttention).slice(0,6);
-  const supportRows=supportSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.updatedAt?.seconds||0)-(a.updatedAt?.seconds||0));
+  const supportRows=supportSnap.docs.map(d=>({id:d.id,...d.data()})).filter(t=>t.humanRequested===true||["waiting","active","needs_human","open"].includes(t.status)).sort((a,b)=>(b.updatedAt?.seconds||0)-(a.updatedAt?.seconds||0));
   const supportTop=supportRows.slice(0,5);
   const liveRows=bookings.filter(x=>["accepted","arrived","in_progress"].includes(x.status)).slice(0,5);
   const attentionTotal=attentionRows.length+supportRows.length+sosSnap.size;
@@ -172,13 +172,13 @@ async function renderDrawer(x,tab){
   const threads=threadsSnap.docs.map(d=>({id:d.id,...d.data()}));
   const customerThread=threads.find(t=>t.userRole==="customer"||t.userId===x.customerId)||null;
   const reeloThread=threads.find(t=>t.userRole==="reelo"||t.userId===x.reeloId)||null;
-  const tabs=[['overview','Booking Control'],['customer','Customer Chat'],['reelo','Reelo Chat'],['files','Files'],['timeline','Timeline']];
+  const tabs=[['overview','Booking Control'],['bookingchat','Booking Chat'],['customer','Customer Support'],['reelo','Reelo Support'],['files','Files'],['timeline','Timeline']];
   const ses=sessionState(x);
   $("drawer-body").innerHTML=`<div class="drawer-booking-summary"><div><strong>${bookingRef(x.id)}</strong> ${statusHtml(ses.label,ses.tone)}<span>${esc(x.occasion||"Booking")} · ${dateText(x.scheduledDateTime||x.createdAt)}</span></div><button class="copy-ref" id="copy-booking-ref">Copy ID</button></div><div class="drawer-tabs">${tabs.map(([k,l])=>`<button class="drawer-tab ${tab===k?'active':''}" data-dtab="${k}">${l}${k==='customer'&&customerThread?.unreadBySupport?' •':''}${k==='reelo'&&reeloThread?.unreadBySupport?' •':''}</button>`).join("")}</div><div id="drawer-tab-content"></div>`;
   $("copy-booking-ref").onclick=async()=>{try{await navigator.clipboard.writeText(x.id);toast("Booking ID copied.");}catch{toast(x.id);}};
   document.querySelectorAll("[data-dtab]").forEach(b=>b.onclick=()=>renderDrawer(x,b.dataset.dtab));
   const people={profile,customerUser,reeloUser};
-  if(tab==="overview")renderOverviewTab(x,people);else if(tab==="timeline")renderTimelineTab(x);else if(tab==="files")await renderFilesTab(x);else if(tab==="customer")await renderChatTab(x,customerThread,"customer",people);else if(tab==="reelo")await renderChatTab(x,reeloThread,"reelo",people);
+  if(tab==="overview")renderOverviewTab(x,people);else if(tab==="bookingchat")await renderBookingChatTab(x,people);else if(tab==="timeline")renderTimelineTab(x);else if(tab==="files")await renderFilesTab(x);else if(tab==="customer")await renderChatTab(x,customerThread,"customer",people);else if(tab==="reelo")await renderChatTab(x,reeloThread,"reelo",people);
 }
 function renderOverviewTab(x,people){
   const {profile={},customerUser={},reeloUser={}}=people||{};
@@ -224,6 +224,25 @@ async function ownerAction(x,action){const reason=$("owner-reason")?.value.trim(
   }catch(e){toast(friendly(e));}
 }
 async function saveNote(bookingId){const note=$("ops-note").value.trim();if(!note)return toast("Write an internal note first.");await addDoc(collection(db,"operations_notes"),{targetType:"booking",targetId:bookingId,note,adminId:auth.currentUser.uid,adminEmail:auth.currentUser.email||"",createdAt:serverTimestamp()});$("ops-note").value="";toast("Internal note saved.");}
+async function renderBookingChatTab(x,people){
+  const {profile={},customerUser={},reeloUser={}}=people||{};
+  const customerName=x.customerName||customerUser.name||customerUser.displayName||x.customerEmail||"Customer";
+  const reeloName=x.reeloName||profile.name||reeloUser.name||x.reeloEmail||"Reelo";
+  $("drawer-tab-content").innerHTML=`<section class="drawer-section"><div class="section-title-row"><div><h3>Customer ↔ Reelo booking chat</h3><p class="muted">Read-only Operations view. Support replies stay in Customer Support / Reelo Support so Operations never impersonates either booking party.</p></div><strong>${esc(bookingRef(x.id))}</strong></div><div id="booking-party-chat" class="chat-box"><div class="loading">Loading booking conversation…</div></div></section>`;
+  const q=query(collection(db,"bookings",x.id,"messages"),orderBy("createdAt"));
+  const unsub=onSnapshot(q,snap=>{
+    const box=$("booking-party-chat");if(!box)return;
+    box.innerHTML=snap.docs.map(d=>{
+      const m=d.data();
+      const sender=m.senderId===x.customerId?customerName:m.senderId===x.reeloId?reeloName:(m.senderName||"Booking participant");
+      const role=m.senderId===x.customerId?"Customer":m.senderId===x.reeloId?"Reelo":"Message";
+      return `<div class="bubble booking-message"><strong>${esc(sender)} <small>· ${esc(role)}</small></strong><span>${esc(m.text||"")}</span><small>${esc(dateText(m.createdAt))}</small></div>`;
+    }).join("")||'<div class="empty">No direct customer ↔ Reelo messages have been sent for this booking.</div>';
+    box.scrollTop=box.scrollHeight;
+  },e=>{const box=$("booking-party-chat");if(box)box.innerHTML=`<div class="empty">Could not load booking chat: ${esc(friendly(e))}</div>`;});
+  drawerUnsubs.push(unsub);
+}
+
 function renderTimelineTab(x){const items=[["Booking created",x.createdAt],["Payment captured",x.paymentCapturedAt],["Reelo accepted",x.acceptedAt],["Reelo on the way",x.leftAt],["Arrived",x.arrivedAt],["Session started",x.startedAt],["Session completed",x.completedAt],["Content delivered",x.deliveredAt],["Customer accepted",x.deliveryConfirmedAt]].filter(([,v])=>v);$("drawer-tab-content").innerHTML=`<section class="drawer-section"><h3>Booking timeline</h3><div class="timeline">${items.length?items.map(([l,v])=>`<div class="timeline-item"><strong>${esc(l)}</strong><span>${esc(dateText(v))}</span></div>`).join(""):'<div class="empty">No lifecycle timestamps have been recorded.</div>'}</div></section>`;}
 async function renderFilesTab(x){$("drawer-tab-content").innerHTML='<section class="drawer-section"><div class="loading">Loading delivered files…</div></section>';const snap=await getDocs(query(collection(db,"booking_media"),where("bookingId","==",x.id)));const items=snap.docs.map(d=>d.data());$("drawer-tab-content").innerHTML=`<section class="drawer-section"><h3>Content delivery</h3><div class="state-stack"><div class="state-row"><span>Delivery</span>${statusHtml(deliveryState(x).label,deliveryState(x).tone)}</div><div class="state-row"><span>Required</span><strong>${esc(x.requiredPhotoCount||"—")} photos · ${esc(x.requiredReelCount||"—")} reels</strong></div><div class="state-row"><span>Uploaded</span><strong>${items.filter(i=>i.type==='photo').length} photos · ${items.filter(i=>i.type==='reel').length} reels</strong></div></div></section><section class="drawer-section"><h3>Uploaded files</h3><div class="file-list">${items.length?items.map(i=>`<div class="file-item"><strong>${esc(i.fileName||i.type||"File")}</strong><span>${esc(i.type||"")} · ${esc(i.status||"active")} · ${esc(dateText(i.uploadedAt))}</span></div>`).join(""):'<div class="empty">No content has been uploaded for this booking.</div>'}</div></section>`;}
 async function renderChatTab(x,thread,role,people={}){
@@ -246,10 +265,10 @@ async function renderChatTab(x,thread,role,people={}){
 }
 
 async function loadSupport(role){
-  const [snap,bookings]=await Promise.all([getDocs(query(collection(db,"support_threads"),where("humanRequested","==",true))),bookingCache.length?Promise.resolve(bookingCache):fetchBookings()]);
-  const rows=snap.docs.map(d=>({id:d.id,...d.data()})).filter(t=>(t.userRole||'customer')===role).sort((a,b)=>(b.updatedAt?.seconds||0)-(a.updatedAt?.seconds||0));
+  const [snap,bookings]=await Promise.all([getDocs(collection(db,"support_threads")),bookingCache.length?Promise.resolve(bookingCache):fetchBookings()]);
+  const rows=snap.docs.map(d=>({id:d.id,...d.data()})).filter(t=>(t.userRole||'customer')===role&&(t.humanRequested===true||["waiting","active","needs_human","open"].includes(t.status))).sort((a,b)=>(b.updatedAt?.seconds||0)-(a.updatedAt?.seconds||0));
   const roleLabel=role==='reelo'?'Reelo':'Customer';
-  const enriched=rows.map(t=>{const b=bookings.find(x=>x.id===t.bookingId)||{};const name=role==='reelo'?(b.reeloName||t.userName||t.displayName||t.userEmail||'Reelo'):(b.customerName||t.userName||t.displayName||t.userEmail||'Customer');const phone=role==='reelo'?(b.reeloPhone||t.userPhone||''):(b.customerPhone||t.userPhone||'');const photo=role==='reelo'?(b.reeloPhotoUrl||''):(b.customerPhotoUrl||'');return {...t,_booking:b,_name:name,_phone:phone,_photo:photo};});
+  const enriched=rows.map(t=>{const b=bookings.find(x=>x.id===t.bookingId)||{};const name=role==='reelo'?(b.reeloName||t.userName||t.displayName||t.userEmail||'Reelo'):(b.customerName||t.userName||t.displayName||t.userEmail||'Customer');const phone=role==='reelo'?(b.reeloPhone||t.userPhone||''):(b.customerPhone||t.userPhone||'');const photo=role==='reelo'?(b.reeloPhotoUrl||t.userPhotoUrl||''):(b.customerPhotoUrl||t.userPhotoUrl||'');return {...t,_booking:b,_name:name,_phone:phone,_photo:photo};});
   $("content").innerHTML=`<section class="panel support-workspace"><div class="panel-head"><div><h3>${roleLabel} chats</h3><p>Names and booking context first. Click the person or booking to open the full case.</p></div><div class="panel-actions"><div class="mini-search support-search"><span>⌕</span><input id="support-search" placeholder="Search name, phone, booking or message"></div><button class="btn secondary" id="support-refresh">Refresh</button></div></div><div id="support-list" class="support-card-list"></div></section>`;
   const render=(term='')=>{const q=term.trim().toLowerCase();const visible=enriched.filter(t=>!q||[t._name,t._phone,t.userEmail,t.userId,t.bookingId,t.bookingOccasion,t.lastIntent,t.lastMessage].filter(Boolean).join(' ').toLowerCase().includes(q));$("support-list").innerHTML=visible.length?visible.map(t=>{const b=t._booking||{};const del=t.bookingId?deliveryState(b):null;const pay=t.bookingId?paymentState(b):null;return `<article class="support-card"><div class="support-person">${avatarHtml(t._name,t._photo,role)}<div><span class="role-pill ${role}">${roleLabel}</span><strong>${esc(t._name)}</strong><small>${esc(t._phone||t.userEmail||t.userId||'')}</small></div></div><div class="support-issue"><span class="issue-label ${t.unreadBySupport?'orange':'blue'}">${esc(t.lastIntent||'Support')}</span><strong>${esc(t.lastMessage||'Human help requested')}</strong><small>${esc(timeAgo(t.updatedAt))}</small></div><div class="support-booking">${t.bookingId?`<strong>${esc(b.occasion||t.bookingOccasion||'Booking')}</strong><small>${esc(b.customerName||'Customer')} ↔ ${esc(b.reeloName||'Not assigned')}</small><button class="booking-link" data-support-booking="${esc(t.bookingId)}">${esc(bookingRef(t.bookingId))}</button>`:'<strong>General support</strong><small>No booking linked</small>'}</div><div class="support-status">${t.bookingId?`${statusHtml(sessionState(b).label,sessionState(b).tone)} ${del?statusHtml(del.label,del.tone):''}<small>${pay?`Payment: ${esc(pay.label)}`:''}</small>`:statusHtml(t.status||'open','blue')}</div><button class="btn primary" data-support="${esc(t.id)}">Open case</button></article>`;}).join(''):'<div class="empty">No human support conversations match this search.</div>';document.querySelectorAll("[data-support-booking]").forEach(b=>b.onclick=()=>b.dataset.supportBooking&&openBooking(b.dataset.supportBooking,role));document.querySelectorAll("[data-support]").forEach(b=>b.onclick=()=>openSupportThread(b.dataset.support));};
   $("support-refresh").onclick=()=>loadPage(role==='reelo'?'reelochats':'customerchats');$("support-search").oninput=e=>render(e.target.value);render();
