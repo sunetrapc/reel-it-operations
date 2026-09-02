@@ -1,13 +1,13 @@
-# Reel It Operations V5 — Workable Control Room
+# Reel It Operations v2.0 — White Control Room
 
 This folder is a complete replacement for the current GitHub Pages Operations frontend.
 
 ## What it does
 
-- White/blue people-first Operations control center
-- Command Center KPIs: today's bookings, customer payments, Reelos online, pending uploads, overdue deliveries and attention
-- Global search by name, phone, booking, Reelo/customer identity, email, payment and payout references
-- Working booking filters for date, status, package, delivery, payment, assignment and attention
+- White, compact operations dashboard (no giant inbox cards)
+- Overview KPIs: today's bookings, revenue, online Reelos, pending uploads, pending actions
+- Searchable/filterable booking table
+- Booking filters: Needs attention, Pending Upload, Pending Approval, Payment Issues, Cancellations
 - Right-side Booking Control Room
 - Separate Customer Chat and Reelo Chat tabs for support threads linked to the booking
 - Files tab reading `booking_media`
@@ -21,7 +21,7 @@ This folder is a complete replacement for the current GitHub Pages Operations fr
   - Payment review / unpaid cancellation when applicable
 - Internal Operations notes
 - Reelos, Content, Payments, Refunds, SOS, Reports, Accounts and Audit views
-- Human-friendly booking references use stored Reel It references when available, with `RLT-BK-...` fallback display
+- Human-friendly Reel It booking references like `RLT-BK-XXXXXX`, while Firestore document IDs remain internal
 
 ## Backend expectation
 
@@ -53,8 +53,3 @@ Do not put Razorpay secrets, Firebase service-account files, passwords, or priva
 ## V4 practical patch
 
 `V4_PRACTICAL_OPERATIONS_PATCH_NOTES.md` documents the controlled V4 upgrade. The patch keeps the existing live support-chat architecture rather than replacing it.
-
-
-## V5 workable patch
-
-See `V5_WORKABLE_OPERATIONS_PATCH_NOTES.md` for the people-first search, filters, support-case metadata, money ledger and Command Center changes.
