@@ -22,11 +22,24 @@ const toast = text => { $("toast").textContent=text; $("toast").classList.add("s
 const friendly = e => { const c=e?.code||""; if(c.includes("permission-denied"))return "This owner account does not have permission for that action."; if(c.includes("failed-precondition"))return e.message?.replace(/^FirebaseError:\s*/i,"")||"This action is not allowed in the current booking state."; if(c.includes("invalid-credential"))return "Incorrect email or password."; return e?.message?.replace(/^Firebase:\s*/i,"").replace(/^FirebaseError:\s*/i,"") || "This action could not be completed."; };
 
 const NAV = [
-  ["overview","Dashboard","⌂"],["customerchats","Customer Chats","◎"],["reelochats","Reelo Chats","◎"],["bookings","Bookings","▤"],["controlrooms","Live / Control","▣"],
-  ["content","Deliveries","□"],["reeloapprovals","Reelo Approvals","✓"],["reelos","Reelos","◉"],["payments","Payments","▧"],["earnings","Reelo Earnings","₹"],["refunds","Refunds & Disputes","↩"],
-  ["sos","Safety / SOS","△"],["reports","Reports","⚑"],["accounts","Accounts","◇"],["settings","Audit & Settings","⚙"]
+  ["overview","Dashboard","⌂"],
+  ["bookings","Bookings","▤"],
+  ["controlrooms","Live / Control","▣"],
+  ["customerchats","Customer Support","◎"],
+  ["reelochats","Reelo Support","◎"],
+  ["reeloapprovals","Live Verification","✓"],
+  ["editingapprovals","Editing Approval","✦"],
+  ["reelos","Reelo Accounts","◉"],
+  ["customeraccounts","Customer Accounts","◇"],
+  ["content","Deliveries","□"],
+  ["payments","Money","₹"],
+  ["sos","Safety / SOS","△"],
+  ["reports","Reports","⚑"],
+  ["accounts","Deletion Requests","⌫"],
+  ["settings","Audit","⚙"]
 ];
 let activePage="overview", bookingCache=[], activeBookingId=null, drawerUnsubs=[], pageUnsub=null;
+let supportCaseUnsubs=[], activeSupportCaseId=null, supportView="open", supportSoundEnabled=true, supportAudioReady=false, supportSeenUpdates=new Map();
 let opsFilters={status:"all",delivery:"all",payment:"all",package:"all",attention:false,date:"all"};
 
 $("nav").innerHTML=NAV.map(([id,label,icon])=>`<button class="nav-button" data-page="${id}"><span class="nav-icon">${icon}</span><span>${label}</span></button>`).join("");
@@ -70,13 +83,13 @@ onAuthStateChanged(auth,async user=>{
 
 const PAGE_META={
   overview:["Command Center","Bookings, support, delivery, money and safety at a glance"],bookings:["Bookings","All bookings and lifecycle states"],controlrooms:["Control Rooms","Bookings that need direct operational intervention"],customerchats:["Customer Chats","Human support conversations from customers, linked to bookings"],reelochats:["Reelo Chats","Human support conversations from Reelos, linked to bookings"],
-  reeloapprovals:["Reelo Approvals","Review live profile selfies and activate Reelos"],reelos:["Reelos","Availability, verification and editing eligibility"],earnings:["Earnings","Reelo earnings and payout readiness"],content:["Deliveries","Pending uploads, delivery reviews and disputes"],payments:["Payments","Customer charges, Reelo earnings and payout exceptions"],refunds:["Refunds","Refund requests and provider exceptions"],
+  reeloapprovals:["Live Verification","Review live profile selfies and activate Reelos"],editingapprovals:["Editing Approval","Review Reelo portfolios before Edited jobs are unlocked"],reelos:["Reelo Accounts","Search, review and operate Reelo accounts"],customeraccounts:["Customer Accounts","Search, review and operate customer accounts"],earnings:["Earnings","Reelo earnings and payout readiness"],content:["Deliveries","Pending uploads, delivery reviews and disputes"],payments:["Money","Customer charges, Reelo earnings and payout exceptions"],refunds:["Refunds","Refund requests and provider exceptions"],
   sos:["SOS Alerts","Safety alerts requiring immediate attention"],reports:["Reports","User reports and trust & safety cases"],feedback:["Feedback","Customer and Reelo feedback"],accounts:["Accounts","Deletion requests and account operations"],settings:["Settings","Admin audit and system controls"]
 };
 async function loadPage(id){
-  if(pageUnsub){pageUnsub();pageUnsub=null;} closeDrawer(false);activePage=id;document.querySelectorAll("[data-page]").forEach(b=>b.classList.toggle("active",b.dataset.page===id));
+  if(pageUnsub){pageUnsub();pageUnsub=null;} clearSupportCaseStreams(); closeDrawer(false);activePage=id;document.querySelectorAll("[data-page]").forEach(b=>b.classList.toggle("active",b.dataset.page===id));
   const [title,sub]=PAGE_META[id]||["Operations",""];$("page-title").textContent=title;$("page-subtitle").textContent=sub;$("content").innerHTML='<div class="loading">Loading live operations…</div>';
-  try{if(id==="overview")await loadOverview();else if(id==="bookings"||id==="controlrooms")await loadBookings();else if(id==="customerchats")await loadSupport("customer");else if(id==="reelochats")await loadSupport("reelo");else if(id==="reeloapprovals")await loadReeloApprovals();else if(id==="reelos")await loadReelos();else if(id==="content")await loadContent();else if(id==="payments"||id==="earnings")await loadPayments();else if(id==="refunds")await loadRefunds();else if(id==="sos")await loadSOS();else if(id==="reports"||id==="feedback")await loadReports();else if(id==="accounts")await loadAccounts();else if(id==="settings")await loadAudit();}
+  try{if(id==="overview")await loadOverview();else if(id==="bookings"||id==="controlrooms")await loadBookings();else if(id==="customerchats")await loadSupport("customer");else if(id==="reelochats")await loadSupport("reelo");else if(id==="reeloapprovals")await loadReeloApprovals();else if(id==="editingapprovals")await loadEditingApprovals();else if(id==="reelos")await loadReelos();else if(id==="customeraccounts")await loadCustomerAccounts();else if(id==="content")await loadContent();else if(id==="payments"||id==="earnings")await loadPayments();else if(id==="refunds")await loadRefunds();else if(id==="sos")await loadSOS();else if(id==="reports"||id==="feedback")await loadReports();else if(id==="accounts")await loadAccounts();else if(id==="settings")await loadAudit();}
   catch(e){$("content").innerHTML=`<div class="panel"><div class="empty"><strong>Could not load this section.</strong><br><span class="sub">${esc(friendly(e))}</span><br><br><button class="btn secondary" id="retry">Try again</button></div></div>`;$("retry").onclick=()=>loadPage(id);}
 }
 
@@ -264,48 +277,82 @@ async function renderChatTab(x,thread,role,people={}){
   $("resolve-chat").onclick=async()=>{await setDoc(ref,{status:"resolved",humanRequested:false,unreadBySupport:false,resolvedAt:serverTimestamp(),updatedAt:serverTimestamp()},{merge:true});toast("Conversation resolved.");await renderDrawer(x,role);};
 }
 
+function clearSupportCaseStreams(){supportCaseUnsubs.forEach(fn=>{try{fn();}catch{}});supportCaseUnsubs=[];}
+function unlockSupportAudio(){if(supportAudioReady)return;try{const Ctx=window.AudioContext||window.webkitAudioContext;if(!Ctx)return;const ctx=new Ctx();if(ctx.state==='suspended')ctx.resume();window.__reelitSupportAudio=ctx;supportAudioReady=true;}catch{}}
+document.addEventListener('click',unlockSupportAudio,{passive:true});
+function playSupportSound(){if(!supportSoundEnabled)return;try{unlockSupportAudio();const ctx=window.__reelitSupportAudio;if(!ctx)return;const osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='sine';osc.frequency.setValueAtTime(760,ctx.currentTime);osc.frequency.exponentialRampToValueAtTime(980,ctx.currentTime+.12);gain.gain.setValueAtTime(.0001,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(.12,ctx.currentTime+.02);gain.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+.22);osc.connect(gain).connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+.24);}catch{}}
+function maybeNotifySupport(rows){let fresh=false;for(const t of rows){const stamp=t.updatedAt?.seconds||t.humanRequestedAt?.seconds||t.createdAt?.seconds||0;const prev=supportSeenUpdates.get(t.id);if(prev!==undefined&&stamp>prev&&t.unreadBySupport===true)fresh=true;supportSeenUpdates.set(t.id,stamp);}if(fresh){playSupportSound();toast('New support message received.');document.title='● Reel It Operations';setTimeout(()=>{document.title='Reel It Operations';},5000);}}
+async function resolveSupportCase(threadId,resolved=true){const ref=doc(db,'support_threads',threadId);const payload=resolved?{status:'resolved',humanRequested:false,unreadBySupport:false,resolvedAt:serverTimestamp(),resolvedBy:auth.currentUser?.uid||'',updatedAt:serverTimestamp()}:{status:'open',humanRequested:true,resolvedAt:null,reopenedAt:serverTimestamp(),updatedAt:serverTimestamp()};await setDoc(ref,payload,{merge:true});toast(resolved?'Case resolved.':'Case reopened.');}
+async function supportIdentity(thread,booking={}){
+  let user={},profile={};
+  if(thread.userId){try{const u=await getDoc(doc(db,'users',thread.userId));if(u.exists())user=u.data();}catch{}
+    if((thread.userRole||'customer')==='reelo'){try{const r=await getDoc(doc(db,'reelo_profiles',thread.userId));if(r.exists())profile=r.data();}catch{}}
+  }
+  const reelo=(thread.userRole||'customer')==='reelo';
+  const name=reelo?(booking.reeloName||profile.name||profile.displayName||user.name||user.displayName||thread.userName||thread.displayName||thread.userEmail||'Reelo'):(booking.customerName||user.name||user.displayName||thread.userName||thread.displayName||thread.userEmail||'Customer');
+  const phone=reelo?(booking.reeloPhone||profile.phone||user.phone||thread.userPhone||''):(booking.customerPhone||user.phone||thread.userPhone||'');
+  const email=reelo?(booking.reeloEmail||profile.email||user.email||thread.userEmail||''):(booking.customerEmail||user.email||thread.userEmail||'');
+  const ref=reelo?(booking.reeloRef||profile.reeloRef||thread.reeloRef||thread.userId||''):(booking.customerRef||thread.customerRef||thread.userId||'');
+  const photo=reelo?(booking.reeloPhotoUrl||profile.photoUrl||user.photoUrl||thread.userPhotoUrl||''):(booking.customerPhotoUrl||user.photoUrl||thread.userPhotoUrl||'');
+  return {name,phone,email,ref,photo};
+}
+
 async function loadSupport(role){
   const roleLabel=role==='reelo'?'Reelo':'Customer';
-  $("content").innerHTML=`<section class="panel support-workspace"><div class="panel-head"><div><h3>${roleLabel} chats</h3><p>Live human-support queue from Firebase. New messages appear automatically.</p></div><div class="panel-actions"><div class="mini-search support-search"><span>⌕</span><input id="support-search" placeholder="Search name, phone, booking or message"></div><button class="btn secondary" id="support-refresh">Refresh</button></div></div><div id="support-health" class="sub" style="padding:0 18px 10px">Connecting to support_threads…</div><div id="support-list" class="support-card-list"><div class="loading">Loading support conversations…</div></div></section>`;
+  activeSupportCaseId=null; supportView='open'; clearSupportCaseStreams();
+  $("content").innerHTML=`<section class="panel support-workspace"><div class="panel-head"><div><h3>${roleLabel} support desk</h3><p>Work each case here — identity, conversation, booking context and actions stay together.</p></div><div class="panel-actions"><div class="mini-search support-search"><span>⌕</span><input id="support-search" placeholder="Search name, phone, booking or message"></div><button class="btn secondary" id="support-sound">🔔 Sound on</button><button class="btn secondary" id="support-refresh">Refresh</button></div></div><div class="support-view-tabs"><button class="support-view-tab active" data-support-view="open">Open cases <span id="open-case-count"></span></button><button class="support-view-tab" data-support-view="resolved">Resolved</button></div><div id="support-health" class="sub" style="padding:0 18px 10px">Connecting to support_threads…</div><div id="support-list" class="support-card-list"><div class="loading">Loading support conversations…</div></div></section><section id="support-case-workspace" class="panel support-case-workspace hidden"></section>`;
 
-  // Booking enrichment is helpful, but support must still work even if a booking query fails.
   let bookings=bookingCache;
-  if(!bookings.length){
-    try{bookings=await fetchBookings();}catch(e){bookings=[];console.warn('Booking enrichment unavailable for support queue',e);}
-  }
-
+  if(!bookings.length){try{bookings=await fetchBookings();}catch(e){bookings=[];console.warn('Booking enrichment unavailable for support queue',e);}}
   let latest=[];
-  const render=(term='')=>{
+  const render=async(term='')=>{
     const q=term.trim().toLowerCase();
-    const rows=latest
-      .filter(t=>((t.userRole||'customer')==='reelo'?'reelo':'customer')===role)
-      // Keep every actionable/visible human thread, including older schema variants.
-      .filter(t=>t.humanRequested===true||t.unreadBySupport===true||Boolean(t.lastMessage)||['waiting','active','needs_human','open','pending'].includes(String(t.status||'').toLowerCase()))
-      .sort((a,b)=>(b.updatedAt?.seconds||b.humanRequestedAt?.seconds||b.createdAt?.seconds||0)-(a.updatedAt?.seconds||a.humanRequestedAt?.seconds||a.createdAt?.seconds||0));
-    const enriched=rows.map(t=>{const b=bookings.find(x=>x.id===t.bookingId)||{};const name=role==='reelo'?(b.reeloName||t.userName||t.displayName||t.userEmail||'Reelo'):(b.customerName||t.userName||t.displayName||t.userEmail||'Customer');const phone=role==='reelo'?(b.reeloPhone||t.userPhone||''):(b.customerPhone||t.userPhone||'');const photo=role==='reelo'?(b.reeloPhotoUrl||t.userPhotoUrl||''):(b.customerPhotoUrl||t.userPhotoUrl||'');return {...t,_booking:b,_name:name,_phone:phone,_photo:photo};});
-    const visible=enriched.filter(t=>!q||[t._name,t._phone,t.userEmail,t.userId,t.bookingId,t.bookingOccasion,t.lastIntent,t.lastMessage,t.status].filter(Boolean).join(' ').toLowerCase().includes(q));
-    const health=$("support-health");if(health)health.textContent=`Firebase connected · ${latest.length} support thread${latest.length===1?'':'s'} total · ${rows.length} ${roleLabel.toLowerCase()} conversation${rows.length===1?'':'s'}`;
-    $("support-list").innerHTML=visible.length?visible.map(t=>{const b=t._booking||{};const hasBooking=Boolean(t.bookingId&&Object.keys(b).length);const del=hasBooking?deliveryState(b):null;const pay=hasBooking?paymentState(b):null;return `<article class="support-card"><div class="support-person">${avatarHtml(t._name,t._photo,role)}<div><span class="role-pill ${role}">${roleLabel}</span><strong>${esc(t._name)}</strong><small>${esc(t._phone||t.userEmail||t.userId||'')}</small></div></div><div class="support-issue"><span class="issue-label ${t.unreadBySupport?'orange':'blue'}">${esc(t.lastIntent||'Support')}</span><strong>${esc(t.lastMessage||'Human help requested')}</strong><small>${esc(timeAgo(t.updatedAt||t.humanRequestedAt||t.createdAt))}</small></div><div class="support-booking">${t.bookingId?`<strong>${esc((hasBooking&&b.occasion)||t.bookingOccasion||'Booking')}</strong><small>${hasBooking?`${esc(b.customerName||'Customer')} ↔ ${esc(b.reeloName||'Not assigned')}`:'Booking linked'}</small><button class="booking-link" data-support-booking="${esc(t.bookingId)}">${esc(bookingRef(t.bookingId))}</button>`:'<strong>General support</strong><small>No booking linked</small>'}</div><div class="support-status">${hasBooking?`${statusHtml(sessionState(b).label,sessionState(b).tone)} ${del?statusHtml(del.label,del.tone):''}<small>${pay?`Payment: ${esc(pay.label)}`:''}</small>`:statusHtml(t.status||'waiting',t.unreadBySupport?'orange':'blue')}</div><button class="btn primary" data-support="${esc(t.id)}">Open case</button></article>`;}).join(''):'<div class="empty">No support conversations match this view.</div>';
-    document.querySelectorAll("[data-support-booking]").forEach(b=>b.onclick=()=>b.dataset.supportBooking&&openBooking(b.dataset.supportBooking,role));
-    document.querySelectorAll("[data-support]").forEach(b=>b.onclick=()=>openSupportThread(b.dataset.support));
+    const roleRows=latest.filter(t=>((t.userRole||'customer')==='reelo'?'reelo':'customer')===role);
+    const openRows=roleRows.filter(t=>String(t.status||'').toLowerCase()!=='resolved'&&(t.humanRequested===true||t.unreadBySupport===true||Boolean(t.lastMessage)||['waiting','active','needs_human','open','pending'].includes(String(t.status||'').toLowerCase())));
+    const rows=(supportView==='resolved'?roleRows.filter(t=>String(t.status||'').toLowerCase()==='resolved'):openRows).sort((a,b)=>(b.updatedAt?.seconds||b.humanRequestedAt?.seconds||b.createdAt?.seconds||0)-(a.updatedAt?.seconds||a.humanRequestedAt?.seconds||a.createdAt?.seconds||0));
+    const enriched=await Promise.all(rows.map(async t=>{const b=bookings.find(x=>x.id===t.bookingId)||{};const ident=await supportIdentity(t,b);return {...t,_booking:b,_name:ident.name,_phone:ident.phone,_email:ident.email,_ref:ident.ref,_photo:ident.photo};}));
+    const visible=enriched.filter(t=>!q||[t._name,t._phone,t._email,t._ref,t.userId,t.bookingId,t.bookingOccasion,t.lastIntent,t.lastMessage,t.status].filter(Boolean).join(' ').toLowerCase().includes(q));
+    $("open-case-count").textContent=openRows.length?`(${openRows.length})`:'';
+    const health=$("support-health");if(health)health.textContent=`Firebase connected · ${latest.length} support threads total · ${openRows.length} open ${roleLabel.toLowerCase()} case${openRows.length===1?'':'s'}`;
+    $("support-list").innerHTML=visible.length?visible.map(t=>{const b=t._booking||{};const hasBooking=Boolean(t.bookingId&&Object.keys(b).length);const del=hasBooking?deliveryState(b):null;const pay=hasBooking?paymentState(b):null;return `<article class="support-card ${t.unreadBySupport?'unread':''} ${activeSupportCaseId===t.id?'selected':''}"><div class="support-person">${avatarHtml(t._name,t._photo,role)}<div><span class="role-pill ${role}">${roleLabel}</span><strong>${esc(t._name)}</strong><small>${esc(t._phone||t._email||t._ref||t.userId||'Identity unavailable')}</small><small>${esc(t._ref||'')}</small></div></div><div class="support-issue"><span class="issue-label ${t.unreadBySupport?'orange':'blue'}">${t.unreadBySupport?'NEW · ':''}${esc(t.lastIntent||'Support')}</span><strong>${esc(t.lastMessage||'Human help requested')}</strong><small>${esc(timeAgo(t.updatedAt||t.humanRequestedAt||t.createdAt))}</small></div><div class="support-booking">${t.bookingId?`<strong>${esc((hasBooking&&b.occasion)||t.bookingOccasion||'Booking')}</strong><small>${hasBooking?`${esc(b.customerName||'Customer')} ↔ ${esc(b.reeloName||'Not assigned')}`:'Booking linked — details unavailable'}</small><span class="booking-ref-inline">${esc(bookingRef(t.bookingId))}</span>`:'<strong>General support</strong><small>No booking linked</small>'}</div><div class="support-status">${hasBooking?`${statusHtml(sessionState(b).label,sessionState(b).tone)} ${del?statusHtml(del.label,del.tone):''}<small>${pay?`Payment: ${esc(pay.label)}`:''}</small>`:statusHtml(t.status||'waiting',t.unreadBySupport?'orange':'blue')}</div><button class="btn ${t.unreadBySupport?'primary':'secondary'}" data-support="${esc(t.id)}">${activeSupportCaseId===t.id?'Case open':'Open case'}</button></article>`;}).join(''):'<div class="empty">No support conversations match this view.</div>';
+    document.querySelectorAll('[data-support]').forEach(b=>b.onclick=()=>openSupportThread(b.dataset.support,bookings));
   };
-
   $("support-refresh").onclick=()=>loadPage(role==='reelo'?'reelochats':'customerchats');
   $("support-search").oninput=e=>render(e.target.value);
-  pageUnsub=onSnapshot(collection(db,"support_threads"),snap=>{latest=snap.docs.map(d=>({id:d.id,...d.data()}));render($("support-search")?.value||'');},err=>{console.error('support_threads listener failed',err);const health=$("support-health");if(health)health.textContent=`Could not read support_threads: ${friendly(err)}`;$("support-list").innerHTML=`<div class="empty"><strong>Support messages could not be read.</strong><br><span class="sub">${esc(friendly(err))}</span></div>`;});
+  $("support-sound").onclick=()=>{supportSoundEnabled=!supportSoundEnabled;$("support-sound").textContent=supportSoundEnabled?'🔔 Sound on':'🔕 Sound off';if(supportSoundEnabled){unlockSupportAudio();playSupportSound();}};
+  document.querySelectorAll('[data-support-view]').forEach(b=>b.onclick=()=>{supportView=b.dataset.supportView;document.querySelectorAll('[data-support-view]').forEach(x=>x.classList.toggle('active',x===b));render($("support-search")?.value||'');});
+  pageUnsub=onSnapshot(collection(db,'support_threads'),snap=>{latest=snap.docs.map(d=>({id:d.id,...d.data()}));maybeNotifySupport(latest.filter(t=>((t.userRole||'customer')==='reelo'?'reelo':'customer')===role));render($("support-search")?.value||'');},err=>{console.error('support_threads listener failed',err);const health=$("support-health");if(health)health.textContent=`Could not read support_threads: ${friendly(err)}`;$("support-list").innerHTML=`<div class="empty"><strong>Support messages could not be read.</strong><br><span class="sub">${esc(friendly(err))}</span></div>`;});
 }
 
-async function openSupportThread(id){
-  const snap=await getDoc(doc(db,"support_threads",id));
-  if(!snap.exists())return toast("Support thread not found.");
-  const t={id,...snap.data()};
-  if(t.bookingId)return openBooking(t.bookingId,t.userRole==="reelo"?"reelo":"customer");
-  modal("Support conversation",`<div class="drawer-section"><div class="chat-context"><div><span class="role-pill ${t.userRole==='reelo'?'reelo':'customer'}">${t.userRole==='reelo'?'Reelo':'Customer'}</span><strong>${esc(t.userName||t.userEmail||t.userId||'User')}</strong><span>${esc(t.userEmail||'—')} · ${esc(t.userPhone||'—')}</span><small>${esc(t.userId||'—')}</small></div></div><div class="state-row"><span>General support</span>${statusHtml(t.status||'waiting',t.unreadBySupport?'orange':'blue')}</div></div><div id="general-support-chat" class="chat-box"><div class="loading">Loading conversation…</div></div><div class="chat-compose"><textarea id="general-chat-reply" rows="2" placeholder="Reply as Reel It Support"></textarea><button class="btn primary" id="general-send-chat">Send</button></div>`);
-  const ref=doc(db,"support_threads",id);
-  const unsub=onSnapshot(query(collection(ref,"messages"),orderBy("createdAt")),ms=>{const box=$("general-support-chat");if(!box)return;box.innerHTML=ms.docs.map(d=>{const m=d.data();const cls=m.senderType==="support"?"support":m.senderType==="system"||m.senderType==="assistant"?"system":"";return `<div class="bubble ${cls}"><span>${esc(m.text||"")}</span><small>${esc(dateText(m.createdAt))}</small></div>`;}).join("")||'<div class="empty">No messages.</div>';box.scrollTop=box.scrollHeight;},e=>toast(friendly(e)));
-  const dialog=$("modal");dialog.addEventListener('close',()=>unsub(),{once:true});
-  $("general-send-chat").onclick=async()=>{const text=$("general-chat-reply").value.trim();if(!text)return;try{await addDoc(collection(ref,"messages"),{senderId:auth.currentUser.uid,senderType:"support",text,createdAt:serverTimestamp()});await setDoc(ref,{lastMessage:text,lastMessageBy:"support",lastMessageSender:"support",unreadBySupport:false,unreadByUser:true,status:"active",updatedAt:serverTimestamp()},{merge:true});$("general-chat-reply").value="";toast("Reply sent.");}catch(e){toast(friendly(e));}};
+async function openSupportThread(id,bookings=bookingCache){
+  clearSupportCaseStreams(); activeSupportCaseId=id;
+  const snap=await getDoc(doc(db,'support_threads',id));if(!snap.exists())return toast('Support thread not found.');
+  const t={id,...snap.data()}; const b=(bookings||[]).find(x=>x.id===t.bookingId)|| (t.bookingId?await getDoc(doc(db,'bookings',t.bookingId)).then(s=>s.exists()?{id:s.id,...s.data()}:{}).catch(()=>({})):{});
+  const ident=await supportIdentity(t,b); const role=(t.userRole||'customer')==='reelo'?'reelo':'customer'; const roleLabel=role==='reelo'?'Reelo':'Customer';
+  await setDoc(doc(db,'support_threads',id),{unreadBySupport:false,updatedAt:t.updatedAt||serverTimestamp()},{merge:true}).catch(()=>{});
+  const ws=$("support-case-workspace");ws.classList.remove('hidden');
+  ws.innerHTML=`<div class="case-header"><div class="case-person">${avatarHtml(ident.name,ident.photo,role)}<div><span class="role-pill ${role}">${roleLabel}</span><h2>${esc(ident.name)}</h2><p>${esc(ident.phone||'No phone')} · ${esc(ident.email||'No email')}</p><small>${esc(ident.ref||t.userId||'')}</small></div></div><div class="case-header-actions">${t.bookingId?`<span class="case-booking-chip">${esc(bookingRef(t.bookingId))}</span>`:'<span class="case-booking-chip neutral">General support</span>'}<button class="btn ${String(t.status||'').toLowerCase()==='resolved'?'secondary':'success'}" id="case-resolve">${String(t.status||'').toLowerCase()==='resolved'?'Reopen case':'✓ Resolve case'}</button></div></div><div class="case-summary-strip"><div><span>Latest issue</span><strong>${esc(t.lastIntent||t.lastMessage||'Support request')}</strong></div><div><span>Case status</span><strong>${esc(t.status||'waiting')}</strong></div><div><span>Last activity</span><strong>${esc(timeAgo(t.updatedAt||t.createdAt))}</strong></div>${t.bookingId?`<div><span>Booking</span><strong>${esc((b.occasion||'Booking')+' · '+bookingRef(t.bookingId))}</strong></div>`:''}</div><div class="case-tabs"><button class="case-tab active" data-case-tab="conversation">Conversation</button><button class="case-tab" data-case-tab="booking">Booking / Control</button><button class="case-tab" data-case-tab="notes">Case notes</button></div><div id="case-tab-body"></div>`;
+  $("case-resolve").onclick=async()=>{const was=String(t.status||'').toLowerCase()==='resolved';try{await resolveSupportCase(id,!was);activeSupportCaseId=null;ws.classList.add('hidden');loadPage(role==='reelo'?'reelochats':'customerchats');}catch(e){toast(friendly(e));}};
+  const show=async tab=>{document.querySelectorAll('[data-case-tab]').forEach(x=>x.classList.toggle('active',x.dataset.caseTab===tab));if(tab==='conversation')await renderInlineSupportConversation(t,ident);else if(tab==='booking')renderInlineSupportBooking(t,b);else renderInlineSupportNotes(t,b);};
+  document.querySelectorAll('[data-case-tab]').forEach(x=>x.onclick=()=>show(x.dataset.caseTab)); await show('conversation'); ws.scrollIntoView({behavior:'smooth',block:'start'});
 }
+
+async function renderInlineSupportConversation(t,ident){
+  const body=$("case-tab-body");body.innerHTML=`<div class="case-conversation-layout"><div><div id="inline-support-chat" class="chat-box inline-chat"><div class="loading">Loading conversation…</div></div><div class="quick"><button data-inline-quick="I am reviewing this now. Please keep this chat open while I check it.">Reviewing now</button><button data-inline-quick="Please tell me exactly what happened. Do not share passwords, OTPs, UPI PINs or full payment details.">Ask for details</button><button data-inline-quick="I am checking the booking and payment records now.">Checking records</button></div><div class="chat-compose inline-compose"><textarea id="inline-chat-reply" rows="2" placeholder="Reply as Reel It Support"></textarea><button class="btn primary" id="inline-send-chat">Send reply</button></div></div><aside class="case-side-card"><h3>Who am I speaking to?</h3>${kv('Name',ident.name)}${kv('Phone',ident.phone||'—')}${kv('Email',ident.email||'—')}${kv('Reference',ident.ref||t.userId||'—')}<p class="muted">You stay on this case while replying — no pop-up or separate window.</p></aside></div>`;
+  const ref=doc(db,'support_threads',t.id);let lastCount=0;const unsub=onSnapshot(query(collection(ref,'messages'),orderBy('createdAt')),ms=>{const box=$("inline-support-chat");if(!box)return;if(lastCount&&ms.size>lastCount)playSupportSound();lastCount=ms.size;box.innerHTML=ms.docs.map(d=>{const m=d.data();const cls=m.senderType==='support'?'support':m.senderType==='system'||m.senderType==='assistant'?'system':'';const who=m.senderType==='support'?'Reel It Support':m.senderType==='system'||m.senderType==='assistant'?'System':ident.name;return `<div class="bubble ${cls}"><strong>${esc(who)}</strong><span>${esc(m.text||'')}</span><small>${esc(dateText(m.createdAt))}</small></div>`;}).join('')||'<div class="empty">No messages.</div>';box.scrollTop=box.scrollHeight;},e=>toast(friendly(e)));supportCaseUnsubs.push(unsub);
+  document.querySelectorAll('[data-inline-quick]').forEach(b=>b.onclick=()=>$("inline-chat-reply").value=b.dataset.inlineQuick);
+  $("inline-send-chat").onclick=async()=>{const text=$("inline-chat-reply").value.trim();if(!text)return;try{await addDoc(collection(ref,'messages'),{senderId:auth.currentUser.uid,senderType:'support',text,createdAt:serverTimestamp()});await setDoc(ref,{lastMessage:text,lastMessageBy:'support',lastMessageSender:'support',unreadBySupport:false,unreadByUser:true,status:'active',humanRequested:true,updatedAt:serverTimestamp()},{merge:true});$("inline-chat-reply").value='';toast('Reply sent.');}catch(e){toast(friendly(e));}};
+}
+
+function renderInlineSupportBooking(t,b){
+  const body=$("case-tab-body"); if(!t.bookingId){body.innerHTML='<div class="empty roomy">This is general support and is not linked to a booking. You can still resolve the case or add internal notes.</div>';return;}
+  if(!b||!b.id){body.innerHTML=`<div class="empty roomy"><strong>${esc(bookingRef(t.bookingId))}</strong><br>Booking context could not be loaded. <button class="btn secondary" id="try-open-booking">Open booking record</button></div>`;$("try-open-booking").onclick=()=>openBooking(t.bookingId);return;}
+  const ses=sessionState(b),del=deliveryState(b),pay=paymentState(b);const forceStatuses=['searching','accepted','arrived','in_progress','completed','cancelled'];
+  body.innerHTML=`<div class="inline-booking-grid"><section class="case-side-card"><h3>Booking at a glance</h3>${kv('Booking',bookingRef(b.id))}${kv('Occasion',b.occasion||'Booking')}${kv('Customer',b.customerName||b.customerEmail||'Customer')}${kv('Reelo',b.reeloName||b.reeloEmail||'Not assigned')}${kv('Session',ses.label)}${kv('Delivery',del.label+' · '+del.detail)}${kv('Payment',pay.label+' · '+money(b.customerPrice||b.price))}${kv('Scheduled',dateText(b.scheduledDateTime||b.createdAt))}<button class="btn primary wide" id="open-full-booking">Open full Booking Control</button></section><section class="case-control-card"><h3>Emergency status control</h3><p class="muted">Use only when the booking state is genuinely wrong. The backend audits the change.</p><label class="field">Force booking status<select id="inline-force-status"><option value="">Choose permitted status…</option>${forceStatuses.map(v=>`<option value="${v}">${v.replaceAll('_',' ')}</option>`).join('')}</select></label><label class="field">Reason<textarea id="inline-force-reason" rows="3" placeholder="Why are you changing this booking state?"></textarea></label><button class="btn danger" id="inline-force-apply">Apply forced status</button></section></div>`;
+  $("open-full-booking").onclick=()=>openBooking(b.id,'overview');
+  $("inline-force-apply").onclick=async()=>{const targetStatus=$("inline-force-status").value,reason=$("inline-force-reason").value.trim();if(!targetStatus)return toast('Choose a status first.');if(reason.length<5)return toast('Add a short reason first.');if(!confirm(`Force ${bookingRef(b.id)} from ${b.status||'unknown'} to ${targetStatus}?`))return;try{await httpsCallable(functions,'adminForceBookingStatus')({bookingId:b.id,targetStatus,reason});toast('Booking status updated and audited.');const fresh=await getDoc(doc(db,'bookings',b.id));renderInlineSupportBooking(t,fresh.exists()?{id:fresh.id,...fresh.data()}:b);}catch(e){toast(friendly(e));}};
+}
+function renderInlineSupportNotes(t,b){const body=$("case-tab-body");body.innerHTML=`<div class="notes-layout"><section class="case-side-card"><h3>Internal case note</h3><p class="muted">Never sent to the customer or Reelo.</p><textarea id="inline-support-note" rows="5" placeholder="What happened, what you checked, and what the next admin should know"></textarea><button class="btn primary" id="inline-save-note">Save internal note</button></section><section class="case-side-card"><h3>Case references</h3>${kv('Thread ID',t.id)}${kv('User ID',t.userId||'—')}${kv('Booking ID',t.bookingId?bookingRef(t.bookingId):'General support')}${kv('Booking status',b?.status||'—')}</section></div>`;$("inline-save-note").onclick=async()=>{const note=$("inline-support-note").value.trim();if(!note)return toast('Write an internal note first.');try{await httpsCallable(functions,'addOperationsNote')({targetType:'support',targetId:t.id,note});$("inline-support-note").value='';toast('Internal case note saved and audited.');}catch(e){toast(friendly(e));}};}
 
 async function loadReeloApprovals(){
   const snap=await getDocs(query(collection(db,"reelo_profile_reviews"),where("status","==","pending_manual_review")));
@@ -335,7 +382,126 @@ async function reviewReelo(reeloId,decision){
   try{await httpsCallable(functions,"adminReviewReelo")({reeloId,decision,reason});$("modal").close();toast(decision==='approved'?"Reelo approved and activated.":"New selfie requested.");await loadPage("reeloapprovals");}catch(e){toast(friendly(e));}
 }
 
-async function loadReelos(){const snap=await getDocs(collection(db,"reelo_profiles"));const rows=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(a.name||a.email||a.id).localeCompare(String(b.name||b.email||b.id)));$("content").innerHTML=`${metricsHtml([{label:"Total Reelos",value:rows.length,icon:"◎",sub:"Profiles"},{label:"Online",value:rows.filter(x=>x.availability==='Online').length,icon:"●",sub:"Available now",good:true},{label:"Busy",value:rows.filter(x=>x.availability==='Busy').length,icon:"●",sub:"Active session",warn:true},{label:"Editing Approved",value:rows.filter(x=>x.editingApprovalStatus==='approved').length,icon:"✦",sub:"Eligible for Edited"},{label:"Needs Review",value:rows.filter(x=>x.verificationStatus==='pending_manual_review'||x.editingApprovalStatus==='pending_review').length,icon:"!",sub:"Manual review",warn:true}])}<section class="panel"><div class="table-wrap"><table class="data-table"><thead><tr><th>Reelo</th><th>Availability</th><th>Verified</th><th>Editing</th><th>Completed</th><th>Rating</th></tr></thead><tbody>${rows.map(x=>`<tr><td><span class="person">${esc(x.name||x.displayName||x.email||x.id)}</span><span class="sub">${esc(x.email||x.id)}</span></td><td>${statusHtml(x.availability||'Offline',x.availability==='Online'?'green':x.availability==='Busy'?'orange':'')}</td><td>${statusHtml(x.verified?'Approved':'Not approved',x.verified?'green':'orange')}</td><td>${statusHtml(x.editingApprovalStatus||'Not requested',x.editingApprovalStatus==='approved'?'violet':x.editingApprovalStatus==='pending_review'?'orange':'')}</td><td>${esc(x.completedBookings||0)}</td><td>${esc(x.rating||0)} ★</td></tr>`).join("")}</tbody></table></div></section>`;}
+async function loadEditingApprovals(){
+  const [appsSnap,profilesSnap,usersSnap]=await Promise.all([
+    getDocs(collection(db,"editing_applications")),
+    getDocs(collection(db,"reelo_profiles")),
+    getDocs(collection(db,"users"))
+  ]);
+  const profiles=new Map(profilesSnap.docs.map(d=>[d.id,{id:d.id,...d.data()}]));
+  const users=new Map(usersSnap.docs.map(d=>[d.id,{id:d.id,...d.data()}]));
+  const rows=appsSnap.docs.map(d=>({id:d.id,...d.data()})).filter(x=>String(x.status||"pending_review")==="pending_review").sort((a,b)=>(a.submittedAt?.seconds||0)-(b.submittedAt?.seconds||0));
+  $("content").innerHTML=`${metricsHtml([
+    {label:"Pending review",value:rows.length,icon:"✦",sub:"Portfolio decisions",warn:rows.length>0},
+    {label:"Editing approved",value:[...profiles.values()].filter(x=>x.editingApprovalStatus==="approved").length,icon:"✓",sub:"Eligible for Edited",good:true},
+    {label:"Wants editing",value:[...profiles.values()].filter(x=>x.canEditReels===true).length,icon:"◎",sub:"Toggle enabled"}
+  ])}<section class="panel">
+    <div class="panel-head"><div><h3>Editing approval queue</h3><p>Portfolio review is separate from live verification. Approval unlocks Edited matching only when the Reelo also keeps Editing Jobs turned on.</p></div><button class="btn secondary" id="editing-refresh">Refresh</button></div>
+    <div class="approval-grid">${rows.length?rows.map(a=>{
+      const p=profiles.get(a.reeloId||a.id)||{}; const u=users.get(a.reeloId||a.id)||{};
+      const imgs=Array.isArray(a.portfolioImages)&&a.portfolioImages.length?a.portfolioImages:(Array.isArray(p.portfolioImages)?p.portfolioImages:[]);
+      const name=p.name||p.displayName||u.name||u.displayName||p.email||u.email||a.id;
+      return `<article class="approval-card editing-card">
+        <div class="approval-photo">${imgs[0]?`<img src="${esc(imgs[0])}" alt="Portfolio preview for ${esc(name)}">`:'<div class="photo-missing">No portfolio preview</div>'}</div>
+        <div class="approval-body"><span class="role-pill reelo">Editing review</span><h3>${esc(name)}</h3>
+          <p>${esc(imgs.length)} portfolio sample${imgs.length===1?'':'s'} · ${p.verified?'Live verified':'Verification not approved'}</p>
+          <small>${esc(p.reeloRef||a.reeloId||a.id)} · ${esc(p.phone||u.phone||p.email||u.email||'No contact')}</small>
+          <div class="approval-checks">${statusHtml(p.canEditReels?'Editing toggle on':'Editing toggle off',p.canEditReels?'violet':'')}${statusHtml(p.editingApprovalStatus||'pending_review','orange')}</div>
+          <button class="btn primary wide" data-edit-review="${esc(a.id)}">Review portfolio</button>
+        </div>
+      </article>`;
+    }).join(""):'<div class="empty roomy">No Editing applications are waiting for review.</div>'}</div>
+  </section>`;
+  $("editing-refresh").onclick=()=>loadPage("editingapprovals");
+  document.querySelectorAll("[data-edit-review]").forEach(b=>b.onclick=()=>openEditingReview(b.dataset.editReview,rows,profiles,users));
+}
+
+function openEditingReview(id,rows,profiles,users){
+  const a=rows.find(x=>x.id===id); if(!a)return;
+  const rid=a.reeloId||a.id, p=profiles.get(rid)||{},u=users.get(rid)||{};
+  const imgs=Array.isArray(a.portfolioImages)&&a.portfolioImages.length?a.portfolioImages:(Array.isArray(p.portfolioImages)?p.portfolioImages:[]);
+  const name=p.name||p.displayName||u.name||u.displayName||p.email||u.email||rid;
+  modal("Editing approval",`<div class="editing-review-layout">
+    <div><div class="portfolio-grid">${imgs.length?imgs.map((url,i)=>`<button class="portfolio-tile" type="button" data-portfolio-url="${esc(url)}"><img src="${esc(url)}" alt="Portfolio sample ${i+1}"></button>`).join(""):'<div class="photo-missing">No portfolio samples</div>'}</div><p class="muted">Review the submitted portfolio. A minimum of 3 samples is required by the Reelo application flow.</p></div>
+    <div class="review-info"><span class="role-pill reelo">Editing application</span><h2>${esc(name)}</h2>
+      <div class="kv-list">${kv("Reelo",p.reeloRef||rid)}${kv("Phone",p.phone||u.phone||'—')}${kv("Email",p.email||u.email||'—')}${kv("Live verification",p.verified?'Approved':'Not approved')}${kv("Editing toggle",p.canEditReels?'On':'Off')}${kv("Portfolio samples",imgs.length)}${kv("Current editing status",p.editingApprovalStatus||'not_requested')}</div>
+      <label class="review-note">Decision note<textarea id="editing-review-note" rows="4" placeholder="Why are you approving, denying, or asking for a resubmission?"></textarea></label>
+      <div class="review-actions three"><button class="btn danger" id="editing-deny">Deny</button><button class="btn secondary" id="editing-resubmit">Request resubmission</button><button class="btn primary" id="editing-approve" ${imgs.length<3||!p.verified?'disabled':''}>Approve Editing</button></div>
+      ${!p.verified?'<p class="warning-copy">Editing approval is disabled until live verification is approved.</p>':''}
+    </div>
+  </div>`);
+  document.querySelectorAll("[data-portfolio-url]").forEach(b=>b.onclick=()=>window.open(b.dataset.portfolioUrl,"_blank","noopener"));
+  $("editing-deny").onclick=()=>reviewEditingApplication(a,"denied");
+  $("editing-resubmit").onclick=()=>reviewEditingApplication(a,"resubmission_required");
+  if(imgs.length>=3&&p.verified)$("editing-approve").onclick=()=>reviewEditingApplication(a,"approved");
+}
+async function reviewEditingApplication(a,decision){
+  const reason=$("editing-review-note")?.value.trim()||"";
+  if(reason.length<3)return toast("Add a decision note first.");
+  const rid=a.reeloId||a.id;
+  const label=decision==="approved"?"approve Editing":decision==="denied"?"deny Editing":"request a new portfolio submission";
+  if(!confirm(`Are you sure you want to ${label} for this Reelo?`))return;
+  try{
+    await httpsCallable(functions,"adminReviewEditingApplication")({reeloId:rid,decision,reason});
+    $("modal").close();toast(decision==="approved"?"Editing approved.":"Editing review saved.");await loadPage("editingapprovals");
+  }catch(e){toast(friendly(e));}
+}
+
+async function loadReelos(){
+  const [profilesSnap,usersSnap]=await Promise.all([getDocs(collection(db,"reelo_profiles")),getDocs(collection(db,"users"))]);
+  const users=new Map(usersSnap.docs.map(d=>[d.id,{id:d.id,...d.data()}]));
+  const rows=profilesSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(a.name||a.email||a.id).localeCompare(String(b.name||b.email||b.id)));
+  $("content").innerHTML=`${metricsHtml([{label:"Total Reelos",value:rows.length,icon:"◎",sub:"Profiles"},{label:"Online",value:rows.filter(x=>x.availability==="Online").length,icon:"●",sub:"Available now",good:true},{label:"Live verified",value:rows.filter(x=>x.verified===true).length,icon:"✓",sub:"Approved"},{label:"Editing approved",value:rows.filter(x=>x.editingApprovalStatus==="approved").length,icon:"✦",sub:"Edited eligible"}])}<section class="panel"><div class="panel-head"><div><h3>Reelo accounts</h3><p>Open any Reelo for profile, verification, portfolio, bookings, support and controlled account actions.</p></div><div class="mini-search"><span>⌕</span><input id="reelo-account-search" placeholder="Search name, phone, email or Reelo ID"></div></div><div id="reelo-account-list" class="account-list">${renderReeloAccountRows(rows,users)}</div></section><section id="account-workspace" class="panel account-workspace hidden"></section>`;
+  const search=$("reelo-account-search"); search.oninput=()=>{const q=search.value.trim().toLowerCase();$("reelo-account-list").innerHTML=renderReeloAccountRows(rows.filter(x=>[x.name,x.displayName,x.phone,x.email,x.reeloRef,x.id].filter(Boolean).join(" ").toLowerCase().includes(q)),users);wireReeloAccountRows(rows,users);};
+  wireReeloAccountRows(rows,users);
+}
+function renderReeloAccountRows(rows,users){return rows.length?rows.map(x=>{const u=users.get(x.id)||{};return `<button class="account-row" type="button" data-reelo-account="${esc(x.id)}">${avatarHtml(x.name||x.displayName||u.name||"Reelo",x.photoUrl||x.profilePhotoUrl||"","reelo")}<span class="account-primary"><strong>${esc(x.name||x.displayName||u.name||x.email||u.email||x.id)}</strong><small>${esc(x.reeloRef||x.id)} · ${esc(x.phone||u.phone||x.email||u.email||"No contact")}</small></span><span>${statusHtml(x.verified?"Verified":"Verification needed",x.verified?"green":"orange")}</span><span>${statusHtml(x.editingApprovalStatus||"not requested",x.editingApprovalStatus==="approved"?"violet":x.editingApprovalStatus==="pending_review"?"orange":"")}</span><span>${statusHtml(x.availability||"Offline",x.availability==="Online"?"green":x.availability==="Busy"?"orange":"")}</span><span class="row-arrow">Open →</span></button>`;}).join(""):'<div class="empty">No Reelo accounts match.</div>';}
+function wireReeloAccountRows(rows,users){document.querySelectorAll("[data-reelo-account]").forEach(b=>b.onclick=()=>openAccountWorkspace("reelo",rows.find(x=>x.id===b.dataset.reeloAccount),users.get(b.dataset.reeloAccount)||{}));}
+
+async function loadCustomerAccounts(){
+  const snap=await getDocs(collection(db,"users"));
+  const rows=snap.docs.map(d=>({id:d.id,...d.data()})).filter(x=>String(x.role||"customer").toLowerCase()!=="reelo").sort((a,b)=>String(a.name||a.displayName||a.email||a.id).localeCompare(String(b.name||b.displayName||b.email||b.id)));
+  $("content").innerHTML=`${metricsHtml([{label:"Customers",value:rows.length,icon:"◇",sub:"Customer accounts"},{label:"Deletion requested",value:rows.filter(x=>x.deletionRequested===true).length,icon:"⌫",sub:"Needs review",warn:true}])}<section class="panel"><div class="panel-head"><div><h3>Customer accounts</h3><p>Search a customer and open their account, bookings, support history and account actions.</p></div><div class="mini-search"><span>⌕</span><input id="customer-account-search" placeholder="Search name, phone, email or Customer ID"></div></div><div id="customer-account-list" class="account-list">${renderCustomerAccountRows(rows)}</div></section><section id="account-workspace" class="panel account-workspace hidden"></section>`;
+  const search=$("customer-account-search");search.oninput=()=>{const q=search.value.trim().toLowerCase();$("customer-account-list").innerHTML=renderCustomerAccountRows(rows.filter(x=>[x.name,x.displayName,x.phone,x.email,x.customerRef,x.id].filter(Boolean).join(" ").toLowerCase().includes(q)));wireCustomerAccountRows(rows);};wireCustomerAccountRows(rows);
+}
+function renderCustomerAccountRows(rows){return rows.length?rows.map(x=>`<button class="account-row customer" type="button" data-customer-account="${esc(x.id)}">${avatarHtml(x.name||x.displayName||"Customer",x.photoUrl||x.profilePhotoUrl||"","customer")}<span class="account-primary"><strong>${esc(x.name||x.displayName||x.email||x.phone||x.id)}</strong><small>${esc(x.customerRef||x.id)} · ${esc(x.phone||x.email||"No contact")}</small></span><span>${statusHtml(x.deletionRequested?"Deletion requested":"Active",x.deletionRequested?"orange":"green")}</span><span></span><span></span><span class="row-arrow">Open →</span></button>`).join(""):'<div class="empty">No customer accounts match.</div>';}
+function wireCustomerAccountRows(rows){document.querySelectorAll("[data-customer-account]").forEach(b=>b.onclick=()=>openAccountWorkspace("customer",{},rows.find(x=>x.id===b.dataset.customerAccount)));}
+
+async function openAccountWorkspace(role,profile,user){
+  const uid=profile?.id||user?.id;if(!uid)return;
+  const ws=$("account-workspace");if(!ws)return;
+  ws.classList.remove("hidden");ws.innerHTML='<div class="loading">Loading account workspace…</div>';ws.scrollIntoView({behavior:"smooth",block:"start"});
+  const [bookingSnap,supportSnap,reviewSnap]=await Promise.all([getDocs(collection(db,"bookings")),getDocs(collection(db,"support_threads")),role==="reelo"?getDoc(doc(db,"reelo_profile_reviews",uid)):Promise.resolve(null)]);
+  const bookings=bookingSnap.docs.map(d=>({id:d.id,...d.data()})).filter(b=>role==="reelo"?b.reeloId===uid:b.customerId===uid).sort((a,b)=>(b.updatedAt?.seconds||0)-(a.updatedAt?.seconds||0));
+  const supports=supportSnap.docs.map(d=>({id:d.id,...d.data()})).filter(t=>t.userId===uid).sort((a,b)=>(b.updatedAt?.seconds||0)-(a.updatedAt?.seconds||0));
+  const review=reviewSnap?.exists?.()?{id:reviewSnap.id,...reviewSnap.data()}:null;
+  const name=profile?.name||profile?.displayName||user?.name||user?.displayName||profile?.email||user?.email||uid;
+  const photo=profile?.photoUrl||profile?.profilePhotoUrl||user?.photoUrl||user?.profilePhotoUrl||"";
+  const livePhoto=review?.profilePhotoUrl||review?.liveSelfieUrl||"";
+  ws.innerHTML=`<div class="account-head">${avatarHtml(name,photo,role)}<div><span class="role-pill ${role}">${role==="reelo"?"Reelo":"Customer"}</span><h2>${esc(name)}</h2><p>${esc((role==="reelo"?profile?.reeloRef:user?.customerRef)||uid)} · ${esc(profile?.phone||user?.phone||profile?.email||user?.email||"No contact")}</p></div><div class="account-head-actions"><button class="btn secondary" id="account-close">Close</button></div></div><div class="account-tabs"><button class="case-tab active" data-account-tab="profile">Profile</button>${role==="reelo"?'<button class="case-tab" data-account-tab="verification">Verification & photos</button><button class="case-tab" data-account-tab="editing">Editing</button>':''}<button class="case-tab" data-account-tab="bookings">Bookings</button><button class="case-tab" data-account-tab="support">Support</button><button class="case-tab" data-account-tab="actions">Actions</button></div><div id="account-tab-body"></div>`;
+  $("account-close").onclick=()=>ws.classList.add("hidden");
+  const data={role,uid,profile,user,review,name,photo,livePhoto,bookings,supports};
+  document.querySelectorAll("[data-account-tab]").forEach(b=>b.onclick=()=>{document.querySelectorAll("[data-account-tab]").forEach(x=>x.classList.toggle("active",x===b));renderAccountTab(data,b.dataset.accountTab);});
+  renderAccountTab(data,"profile");
+}
+function renderAccountTab(d,tab){
+  const body=$("account-tab-body"); if(!body)return;
+  if(tab==="profile"){body.innerHTML=`<div class="account-detail-grid"><section class="case-side-card"><h3>Account information</h3>${kv("Name",d.name)}${kv("Phone",d.profile?.phone||d.user?.phone||"—")}${kv("Email",d.profile?.email||d.user?.email||"—")}${kv("User ID",d.uid)}${d.role==="reelo"?kv("Availability",d.profile?.availability||"Offline")+kv("Completed bookings",d.profile?.completedBookings||0)+kv("Rating",d.profile?.rating||0):kv("Completed bookings",d.user?.completedBookings||0)}</section><section class="case-side-card"><h3>Current state</h3>${d.role==="reelo"?kv("Live verification",d.profile?.verified?"Approved":d.profile?.verificationStatus||"Not approved")+kv("Editing approval",d.profile?.editingApprovalStatus||"not_requested")+kv("Editing toggle",d.profile?.canEditReels?"On":"Off"):""}${kv("Deletion requested",d.user?.deletionRequested?"Yes":"No")}</section></div>`;return;}
+  if(tab==="verification"){body.innerHTML=`<div class="verification-compare"><section><h3>Current profile photo</h3>${d.photo?`<img src="${esc(d.photo)}" alt="Current Reelo profile photo">`:'<div class="photo-missing">No profile photo</div>'}</section><section><h3>Live verification submission</h3>${d.livePhoto?`<img src="${esc(d.livePhoto)}" alt="Live verification photo">`:'<div class="photo-missing">No live verification photo</div>'}</section></div><div class="account-inline-actions"><button class="btn warning" id="reset-live-verification">Request new live verification</button></div>`;$("reset-live-verification").onclick=async()=>{const reason=prompt("Reason for requesting a new live verification?")?.trim();if(!reason||reason.length<3)return;try{await httpsCallable(functions,"adminReviewReelo")({reeloId:d.uid,decision:"resubmission_required",reason});toast("New live verification requested.");loadPage("reelos");}catch(e){toast(friendly(e));}};return;}
+  if(tab==="editing"){const imgs=Array.isArray(d.profile?.portfolioImages)?d.profile.portfolioImages:[];body.innerHTML=`<section class="case-side-card"><h3>Editing eligibility</h3>${kv("Editing Jobs toggle",d.profile?.canEditReels?"On":"Off")}${kv("Approval",d.profile?.editingApprovalStatus||"not_requested")}${kv("Portfolio samples",imgs.length)}<div class="portfolio-grid compact">${imgs.map((u,i)=>`<a class="portfolio-tile" href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Portfolio ${i+1}"></a>`).join("")||'<div class="empty">No portfolio samples.</div>'}</div></section>`;return;}
+  if(tab==="bookings"){body.innerHTML=`<section class="case-side-card"><h3>${d.bookings.length} bookings</h3>${d.bookings.slice(0,20).map(b=>`<button class="account-booking-link" type="button" data-account-booking="${esc(b.id)}"><strong>${bookingRef(b.id)}</strong><span>${esc(b.occasion||"Booking")} · ${esc(b.status||"unknown")} · ${dateText(b.updatedAt||b.createdAt)}</span></button>`).join("")||'<div class="empty">No bookings.</div>'}</section>`;document.querySelectorAll("[data-account-booking]").forEach(b=>b.onclick=()=>openBooking(b.dataset.accountBooking));return;}
+  if(tab==="support"){body.innerHTML=`<section class="case-side-card"><h3>${d.supports.length} support cases</h3>${d.supports.slice(0,20).map(t=>`<div class="account-support-row"><strong>${esc(t.lastIntent||"Support case")}</strong><span>${esc(t.lastMessage||"No message")} · ${timeAgo(t.updatedAt)}</span>${statusHtml(t.status||"open",String(t.status).toLowerCase()==="resolved"?"green":"orange")}</div>`).join("")||'<div class="empty">No support cases.</div>'}</section>`;return;}
+  if(tab==="actions"){body.innerHTML=`<div class="account-detail-grid"><section class="case-side-card"><h3>Edit operational profile fields</h3><p class="muted">This updates Reel It profile data only; it does not silently rewrite Firebase Authentication credentials.</p><label class="field">Display name<input id="account-edit-name" value="${esc(d.profile?.name||d.user?.name||d.user?.displayName||"")}"></label><label class="field">Phone / contact field<input id="account-edit-phone" value="${esc(d.profile?.phone||d.user?.phone||"")}"></label>${d.role==="reelo"?`<label class="field">Service area<input id="account-edit-area" value="${esc(d.profile?.area||d.profile?.primaryLocation||"")}"></label>`:""}<button class="btn primary" id="save-account-profile">Save profile changes</button></section><section class="case-control-card"><h3>Account access</h3><p class="muted">Disable/enable affects Firebase Authentication and is audited by the backend.</p><label class="field">Reason<textarea id="account-access-reason" rows="4" placeholder="Reason required"></textarea></label><div class="action-stack"><button class="btn danger" id="disable-account">Disable sign-in</button><button class="btn success" id="enable-account">Enable sign-in</button></div></section></div>`;$("save-account-profile").onclick=()=>saveAccountProfile(d);$("disable-account").onclick=()=>setAccountDisabled(d,true);$("enable-account").onclick=()=>setAccountDisabled(d,false);return;}
+}
+async function saveAccountProfile(d){
+  const name=$("account-edit-name").value.trim(),phone=$("account-edit-phone").value.trim();
+  try{await httpsCallable(functions,"adminUpdateAccountProfile")({uid:d.uid,role:d.role,name,phone,area:d.role==="reelo"?$("account-edit-area").value.trim():""});toast("Profile changes saved and audited.");await loadPage(d.role==="reelo"?"reelos":"customeraccounts");}catch(e){toast(friendly(e));}
+}
+async function setAccountDisabled(d,disabled){
+  const reason=$("account-access-reason").value.trim();if(reason.length<5)return toast("Add a short reason first.");
+  if(!confirm(`${disabled?"Disable":"Enable"} sign-in for ${d.name}?`))return;
+  try{await httpsCallable(functions,"adminSetAccountDisabled")({uid:d.uid,disabled,reason});toast(disabled?"Account sign-in disabled.":"Account sign-in enabled.");}catch(e){toast(friendly(e));}
+}
 
 async function loadContent(){const bookings=await fetchBookings();const rows=bookings.filter(x=>['pending_upload','uploading','approval','dispute'].includes(deliveryState(x).key));$("content").innerHTML='<div id="booking-panel"></div>';renderBookingPanel(rows,"all");}
 async function loadPayments(){
