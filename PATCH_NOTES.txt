@@ -1,0 +1,10 @@
+CONTROLLED WEBSITE PATCH
+
+Homepage changes ONLY:
+1. Removed the personal About section.
+2. Removed the About link from the top navigation.
+3. Added Terms & Conditions and Cancellation & Refund Policy links under the existing Trust footer column.
+
+No homepage redesign, layout rewrite, copy rewrite, waitlist change, JavaScript change, or other section deletion was made.
+
+The ZIP also contains the five public legal/support pages and CNAME for upload to the repository root.
